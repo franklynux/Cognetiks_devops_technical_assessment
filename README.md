@@ -46,7 +46,7 @@ For production deployment with RDS, export the required environment variables. E
 export RDS_DB_NAME=mydbname
 export RDS_USERNAME=mydbuser
 export RDS_PASSWORD=mypassword
-export RDS_HOSTNAME=mydbinstance.123456789012.us-east-1.rds.amazonaws.com
+export RDS_HOSTNAME=mydbinstance.000000000.us-east-1.rds.amazonaws.com
 export RDS_PORT=5432
 ```
 
