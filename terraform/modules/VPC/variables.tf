@@ -42,6 +42,18 @@ variable "required_az_count" {
   default     = 2
 }
 
+variable "availability_zones" {
+  description = "List of availability zones to use (optional - will auto-select if not provided)"
+  type        = list(string)
+  default     = []
+}
+
+variable "max_azs" {
+  description = "Maximum number of availability zones to use"
+  type        = number
+  default     = 3
+}
+
 variable "database_subnet_count" {
   description = "Number of database subnets"
   type        = number

@@ -16,6 +16,12 @@ data "aws_availability_zones" "AZs" {
     }
 }
 
+# Flexible AZ selection logic
+locals {
+  # Use provided AZs or auto-select from available ones
+  selected_azs = length(var.availability_zones) > 0 ? var.availability_zones : slice(data.aws_availability_zones.AZs.names, 0, min(length(data.aws_availability_zones.AZs.names), var.max_azs))
+}
+
 # Validate that there are at least 2 AZs available
 variable "required_az_count" {
   default = 2
@@ -24,8 +30,8 @@ variable "required_az_count" {
 resource "terraform_data" "az_validation" {
   lifecycle {
     precondition {
-      condition     = length(data.aws_availability_zones.AZs.names) >= var.required_az_count
-      error_message = "Region must have at least ${var.required_az_count} availability zones. Found: ${length(data.aws_availability_zones.AZs.names)}"
+      condition     = length(local.selected_azs) >= var.required_az_count
+      error_message = "Need at least ${var.required_az_count} availability zones. Selected: ${length(local.selected_azs)}"
     }
   }
 }
@@ -35,7 +41,7 @@ resource "aws_subnet" "public_subnets" {
   count                   = var.public_subnet_count
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_cidrs[count.index]
-  availability_zone       = data.aws_availability_zones.AZs.names[count.index % length(data.aws_availability_zones.AZs.names)]
+  availability_zone       = local.selected_azs[count.index % length(local.selected_azs)]
   map_public_ip_on_launch = true
   tags = {
     Name = "public_subnet_${count.index + 1}"
@@ -78,7 +84,7 @@ resource "aws_subnet" "private_subnets" {
   count                   = var.private_subnet_count
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.private_subnet_cidrs[count.index]
-  availability_zone       = data.aws_availability_zones.AZs.names[count.index % length(data.aws_availability_zones.AZs.names)]
+  availability_zone       = local.selected_azs[count.index % length(local.selected_azs)]
   map_public_ip_on_launch = false
   tags = {
     Name = "private_subnet_${count.index + 1}"
@@ -162,7 +168,7 @@ resource "aws_subnet" "database_subnets" {
   count             = var.database_subnet_count
   vpc_id            = aws_vpc.main.id
   cidr_block        = var.database_subnet_cidrs[count.index]
-  availability_zone = data.aws_availability_zones.AZs.names[count.index % length(data.aws_availability_zones.AZs.names)]
+  availability_zone = local.selected_azs[count.index % length(local.selected_azs)]
   map_public_ip_on_launch = false
   tags = {
     Name = "database_subnet_${count.index + 1}"
