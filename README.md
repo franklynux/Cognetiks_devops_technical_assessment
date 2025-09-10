@@ -226,34 +226,31 @@ kubernetes/
 
 ### Monitoring Setup
 ```bash
-# Install Prometheus and Grafana
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo add grafana https://grafana.github.io/helm-charts
-helm repo update
+# Deploy Prometheus and Grafana using manifests
+kubectl apply -f kubernetes/monitoring/
 
-# Deploy monitoring stack
-helm install prometheus prometheus-community/kube-prometheus-stack \
-  --namespace monitoring --create-namespace
+# Verify monitoring stack deployment
+kubectl get pods -n monitoring
 
 # Access Grafana
-kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80
-# Default credentials: admin/prom-operator
+kubectl port-forward -n monitoring svc/grafana 3000:3000
+# Default credentials: admin/admin
 ```
 
 ### Grafana Dashboards
 
 #### Application Performance Dashboard
-![Django App Performance](./screenshots/grafana-app-performance.png)
+![Django App Performance](./screenshots/)
 
 *Metrics: Request rate, response time, error rate, active connections*
 
 #### Infrastructure Metrics Dashboard
-![Infrastructure Metrics](./screenshots/grafana-infrastructure.png)
+![Infrastructure Metrics](./screenshots/)
 
 *Metrics: CPU utilization, memory usage, network I/O, pod scaling events*
 
 #### Database Performance Dashboard
-![Database Performance](./screenshots/grafana-database.png)
+![Database Performance](./screenshots/)
 
 *Metrics: Connection count, query performance, database size, replication lag*
 
@@ -303,4 +300,4 @@ This implementation demonstrates:
 - **Operational Readiness**: Monitoring, logging, and troubleshooting capabilities
 - **Documentation**: Clear instructions for deployment and maintenance
 
-The solution showcases both traditional EC2 deployment and modern Kubernetes approaches, demonstrating versatility in cloud-native application deployment strategies.
+Thank you for reviewing my Technical DevOps assessment. I look forward to your feedback!

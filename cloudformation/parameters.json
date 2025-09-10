@@ -5,11 +5,11 @@
   },
   {
     "ParameterKey": "KeyName",
-    "ParameterValue": "your-ec2-key-pair"
+    "ParameterValue": "demo-key"
   },
   {
     "ParameterKey": "NotificationEmail",
-    "ParameterValue": "your-email@example.com"
+    "ParameterValue": "chiwando3@outlook.com"
   },
   {
     "ParameterKey": "InstanceType",
