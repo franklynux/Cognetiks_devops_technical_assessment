@@ -39,8 +39,6 @@ resource "aws_security_group_rule" "allow_all_outbound" {
     security_group_id = aws_security_group.app-lb-sg.id
 }
 
-------------------------------------------------------------------
-
 # Security group for the RDS instance
 resource "aws_security_group" "rds-sg" {
     name = "Django-RDS-SG"
@@ -71,7 +69,6 @@ resource "aws_security_group_rule" "allow_all_outbound_rds" {
     security_group_id = aws_security_group.rds-sg.id
 }
 
-------------------------------------------------------------------  
 # Security group for the Django app servers (EC2 instances)
 resource "aws_security_group" "ec2-sg" {  
     name = "Django-App-SG"
@@ -110,4 +107,34 @@ resource "aws_security_group_rule" "allow_all_outbound_ec2" {
     protocol = "-1"  # -1 means all protocols
     cidr_blocks = ["0.0.0.0/0"] # Allow outbound traffic to anywhere
     security_group_id = aws_security_group.ec2-sg.id
+}
+
+# Security group for the Bastion Host
+resource "aws_security_group" "bastion-sg" {
+    name = "Bastion-Host-SG"
+    vpc_id = var.vpc_id
+    description = "Security group for the Bastion Host"
+    tags = {
+      Name = "Bastion-Host-SG"
+    }
+}
+
+# Allow inbound SSH traffic on port 22 from anywhere
+resource "aws_security_group_rule" "allow_ssh_inbound" {
+    type = "ingress"
+    from_port = 22
+    to_port = 22
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    security_group_id = aws_security_group.bastion-sg.id
+}
+
+# Allow all outbound traffic
+resource "aws_security_group_rule" "allow_all_outbound_bastion" {
+    type = "egress"
+    from_port = 0
+    to_port = 0
+    protocol = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+    security_group_id = aws_security_group.bastion-sg.id
 }

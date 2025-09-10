@@ -8,7 +8,7 @@ variable "db_name" {
 variable "engine_version" {
     description = "The version of the database engine"
     type = string
-    default = "17.4"
+    default = "16.4"
 }
 
 variable "instance_class" {
@@ -58,12 +58,6 @@ variable "vpc_id" {
     type = string
 }
 
-variable "db_name" {
-    description = "The name of the database to create"
-    type = string
-    default = "django_app_db"
-}
-
 variable "environment" {
     description = "Deployment environment (e.g., dev, prod)"
     type = string
@@ -73,16 +67,10 @@ variable "environment" {
 variable "parameter_group_name" {
     description = "The name of the DB parameter group to associate"
     type = string
-    default = "default.postgres12"
-  
+    default = "default.postgres16"
 }
 
-variable "private_subnet_3_id" {
-    description = "The ID of the third private subnet"
-    type = string
-}
-
-variable "private_subnet_4_id" {
-    description = "The ID of the fourth private subnet"
-    type = string
+variable "database_subnet_ids" {
+    description = "List of database subnet IDs"
+    type = list(string)
 }

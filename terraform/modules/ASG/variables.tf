@@ -1,11 +1,11 @@
 variable "name_prefix" {
     type =  string
-    default =  "Django-app"
+    default =  "Django-App"
 }
 
 variable "key_name" {
     type =  string
-    default =  "app-key"
+    default =  "demo-key"
 }
 
 variable "vpc_security_group_ids" {
@@ -33,8 +33,26 @@ variable "max_size" {
 }
 
 variable "min_size" {
-
     type =  number
     default =  1
-  
+}
+
+variable "public_subnet_ids" {
+    type = list(string)
+    description = "List of public subnet IDs for bastion host"
+}
+
+variable "bastion_security_group_id" {
+    type = string
+    description = "Security group ID for bastion host from Networking module"
+}
+
+variable "private_subnet_ids" {
+    type = list(string)
+    description = "List of private subnet IDs for Django app instances"
+}
+
+variable "target_group_arn" {
+    type = string
+    description = "Target group ARN for ALB"
 }

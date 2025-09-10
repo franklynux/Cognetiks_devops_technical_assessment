@@ -1,7 +1,7 @@
 variable "bucket_name" {
     description = "s3 bucket name"
     type = string
-    default = "django-app-static-files"
+    default = "django-app-alb-logs"
   
 }
 

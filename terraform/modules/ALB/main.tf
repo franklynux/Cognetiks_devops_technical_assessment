@@ -2,8 +2,8 @@ resource "aws_lb" "app_lb" {
   name               = "Django-app-lb"
   internal           = false
   load_balancer_type = "application"
-  security_groups    =  [var.app_lb_sg_id]
-  subnets            = var.public_subnets_ids
+  security_groups    =  [var.app-lb-sg_id]
+  subnets            = var.public_subnet_ids
   ip_address_type    = "ipv4"
   enable_http2       = true
   idle_timeout       = 60

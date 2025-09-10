@@ -7,7 +7,7 @@ variable "sns_topic_name" {
 variable "email_endpoints" {
   description = "List of email addresses for notifications"
   type        = list(string)
-  default     = [chiwando3@outlook.com]
+  default     = ["chiwando3@outlook.com"]
 }
 
 variable "asg_name" {

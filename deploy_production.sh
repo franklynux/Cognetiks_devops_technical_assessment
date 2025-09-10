@@ -20,7 +20,7 @@ sudo apt install -y python3 python3-pip python3-venv git nginx
 
 # 2. Clone repo if not present
 if [ ! -d "$PROJECT_DIR" ]; then
-    git clone https://github.com/cognetiks/Technical_DevOps_app.git "$PROJECT_DIR"
+    git clone https://github.com/franklynux/Cognetiks_devops_technical_assessment.git "$PROJECT_DIR"
 fi
 cd "$PROJECT_DIR"
 

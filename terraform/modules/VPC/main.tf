@@ -23,10 +23,6 @@ locals {
 }
 
 # Validate that there are at least 2 AZs available
-variable "required_az_count" {
-  default = 2
-}
-
 resource "terraform_data" "az_validation" {
   lifecycle {
     precondition {
@@ -92,7 +88,7 @@ resource "aws_subnet" "private_subnets" {
 }
 
 # Create a NAT Gateway in the first public subnet
-resource "aws_nat_gateway" "private_nat_1" {
+resource "aws_nat_gateway" "private_natGW_1" {
   allocation_id = aws_eip.nat_eip_1.id
   subnet_id    = aws_subnet.public_subnets[0].id  # Use public subnet
   tags = {
@@ -110,7 +106,7 @@ resource "aws_eip" "nat_eip_1" {
 
 
 # Create a NAT Gateway in the second public subnet
-resource "aws_nat_gateway" "private_nat_2" {
+resource "aws_nat_gateway" "private_natGW_2" {
   allocation_id = aws_eip.nat_eip_2.id
   subnet_id    = aws_subnet.public_subnets[1].id  # Use public subnet
   tags = {
@@ -145,14 +141,14 @@ resource "aws_route_table" "private_rt_2" {
 resource "aws_route" "nat_route_1" {
   route_table_id         = aws_route_table.private_rt_1.id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.private_nat_1.id
+  nat_gateway_id         = aws_nat_gateway.private_natGW_1.id
   depends_on = [aws_internet_gateway.igw]  # Ensure the internet gateway is created first
 }
 
 resource "aws_route" "nat_route_2" {
   route_table_id         = aws_route_table.private_rt_2.id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.private_nat_2.id
+  nat_gateway_id         = aws_nat_gateway.private_natGW_2.id
   depends_on = [aws_internet_gateway.igw]  # Ensure the internet gateway is created first
 }   
 

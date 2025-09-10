@@ -1,0 +1,22 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "production"
+  },
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": "your-ec2-key-pair"
+  },
+  {
+    "ParameterKey": "NotificationEmail",
+    "ParameterValue": "your-email@example.com"
+  },
+  {
+    "ParameterKey": "InstanceType",
+    "ParameterValue": "t2.micro"
+  },
+  {
+    "ParameterKey": "DBInstanceClass",
+    "ParameterValue": "db.t3.micro"
+  }
+]

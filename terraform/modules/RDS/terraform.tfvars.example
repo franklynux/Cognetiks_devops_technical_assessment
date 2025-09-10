@@ -1,0 +1,13 @@
+# RDS Configuration
+db_name = "postgresDB"
+engine_version = "16.4"
+instance_class = "db.t3.micro"
+allocated_storage = 100
+storage_type = "gp2"
+
+# Database Credentials
+username = "postgresadmin"
+password = "Admin123!"
+
+# Environment
+environment = "production"

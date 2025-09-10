@@ -1,0 +1,8 @@
+# CloudWatch Configuration
+sns_topic_name = "asg-scaling-alerts"
+email_endpoints = ["your-email@example.com"]
+
+# Alarm Thresholds
+high_cpu_threshold = 75
+low_cpu_threshold = 25
+max_instances_threshold = 3

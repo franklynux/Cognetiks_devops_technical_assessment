@@ -1,0 +1,9 @@
+# ASG Configuration
+name_prefix = "Django-App"
+key_name = "your-ec2-key-pair"
+instance_type = "t2.micro"
+
+# Auto Scaling Configuration
+desired_capacity = 2
+max_size = 3
+min_size = 1

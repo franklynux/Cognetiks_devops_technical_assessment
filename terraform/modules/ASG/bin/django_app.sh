@@ -3,9 +3,21 @@ set -euo pipefail
 
 # Variables
 APP_DIR="/opt/django_app"
-REPO_URL="https://github.com/cognetiks/Technical_DevOps_app.git"
-PROJECT_NAME="mysite"   # CHANGE THIS to the actual Django project folder name in the repo
+REPO_URL="https://github.com/franklynux/Cognetiks_devops_technical_assessment.git"
+PROJECT_NAME="mysite"
 DJANGO_USER="django"
+
+# Install dependencies first
+apt-get update -y
+apt-get install -y python3 python3-venv python3-pip nginx git curl awscli
+
+echo "Fetching RDS endpoint from AWS SSM Parameter Store"
+RDS_ENDPOINT=$(aws ssm get-parameter --name "/DjangoApp/rds_endpoint" --query "Parameter.Value" --output text --region us-east-1)
+
+# Extract RDS hostname and port number separately
+POSTGRES_HOST=$(echo $RDS_ENDPOINT | cut -d':' -f1)
+POSTGRES_PORT=$(echo $RDS_ENDPOINT | cut -d':' -f2)
+echo "RDS Host: $POSTGRES_HOST, Port: $POSTGRES_PORT"
 
 # Root check
 if [[ $EUID -ne 0 ]]; then
@@ -13,9 +25,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-# Install dependencies
-apt-get update -y
-apt-get install -y python3 python3-venv python3-pip nginx git curl
+
 
 # Create user if missing
 if ! id -u $DJANGO_USER >/dev/null 2>&1; then
@@ -36,10 +46,10 @@ sudo -u $DJANGO_USER bash -c "source $APP_DIR/venv/bin/activate && pip install -
 # Create .env file with database credentials
 cat > "$APP_DIR/.env" <<EOF
 RDS_DB_NAME=postgresDB
-RDS_USERNAME=postgres
+RDS_USERNAME=postgresadmin
 RDS_PASSWORD=Admin123!
-RDS_HOSTNAME=your-rds-endpoint.amazonaws.com
-RDS_PORT=5432
+RDS_HOSTNAME=$POSTGRES_HOST
+RDS_PORT=$POSTGRES_PORT
 EOF
 chown $DJANGO_USER:$DJANGO_USER "$APP_DIR/.env"
 
@@ -65,8 +75,7 @@ User=$DJANGO_USER
 Group=www-data
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
-RuntimeDirectory=gunicorn
-ExecStart=$APP_DIR/venv/bin/gunicorn --workers 3 --bind unix:/run/gunicorn/gunicorn.sock $PROJECT_NAME.wsgi:application
+ExecStart=$APP_DIR/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:8000 $PROJECT_NAME.wsgi:application
 Restart=always
 RestartSec=3
 
@@ -77,7 +86,7 @@ EOF
 # Nginx config
 cat > /etc/nginx/sites-available/django_app <<EOF
 server {
-    listen 80;
+    listen 80 default_server;
     server_name _;
 
     location /static/ {
@@ -85,14 +94,24 @@ server {
     }
 
     location / {
-        include proxy_params;
-        proxy_pass http://unix:/run/gunicorn/gunicorn.sock;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
 EOF
 
-ln -sf /etc/nginx/sites-available/django_app /etc/nginx/sites-enabled/
+# Remove default nginx site
 rm -f /etc/nginx/sites-enabled/default
+rm -f /etc/nginx/sites-available/default
+
+# Enable Django app
+ln -sf /etc/nginx/sites-available/django_app /etc/nginx/sites-enabled/django_app
+
+# Test nginx config
+nginx -t
 
 # Enable services
 systemctl daemon-reload

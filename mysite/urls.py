@@ -14,13 +14,15 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
 from django.http import HttpResponse
 
 def home(request):
-    return HttpResponse("<h1>Django App is Running!</h1><p>Welcome to the Technical DevOps App</p>")
+    return HttpResponse("<h1>Django App is Running!</h1><p>Welcome to the Technical DevOps App</p><p>Host: {}</p>".format(request.get_host()))
 
 urlpatterns = [
     path('', home, name='home'),
     path('admin/', admin.site.urls),
-]
+    path('metrics/', include('django_prometheus.urls')),
+    path('metrics', include('django_prometheus.urls')), 
+    ]

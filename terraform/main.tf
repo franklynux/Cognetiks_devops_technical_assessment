@@ -13,27 +13,45 @@ provider "aws" {
 }
 
 module "vpc" {
-  source = "./modules/vpc"  # Path to the VPC module
+  source = "./modules/VPC"
+  max_azs = 2
 }
 
-module "Networking" {
-  source = "./modules/Networking"  # Path to the Networking module
-  vpc_id = module.vpc.vpc_id  # Pass the VPC ID from the VPC module to the Networking module
+module "networking" {
+  source = "./modules/Networking"
+  vpc_id = module.vpc.vpc_id
 }
 
-module "RDS" {
-  source = "./modules/RDS"  # Path to the RDS module
-  vpc_id = module.vpc.vpc_id  # Pass the VPC ID from the VPC module to the RDS module
-  rds_security_group_id = module.Networking.rds_sg_id  # Pass the RDS security group ID from the Networking module to the RDS module
-  private_subnet_3_id = module.vpc.private_subnet_3_id
-  private_subnet_4_id = module.vpc.private_subnet_4_id
-  
+module "asg" {
+  source = "./modules/ASG"
+  vpc_security_group_ids = [module.networking.ec2-sg_id]
+  public_subnet_ids = module.vpc.public_subnet_ids
+  bastion_security_group_id = module.networking.bastion-sg_id
+  private_subnet_ids = [module.vpc.private_subnet_ids[0], module.vpc.private_subnet_ids[1]]
+  target_group_arn = module.alb.target_group_arn
+  key_name = var.key_name
 }
 
-module "EC2" {
-  source = "./modules/EC2"  # Path to the EC2 module
-  vpc_id = module.vpc.vpc_id  # Pass the VPC ID from the VPC module to the EC2 module
-  ec2_security_group_id = module.Networking.ec2_sg_id  # Pass the EC2 security group ID from the Networking module to the EC2 module
-  public_subnet_ids = module.vpc.public_subnet_ids  # Pass the list of public subnet IDs from the VPC module to the EC2 module
-  
+module "alb" {
+  source = "./modules/ALB"
+  vpc_id = module.vpc.vpc_id
+  app-lb-sg_id = module.networking.app-lb-sg_id
+  public_subnet_ids = module.vpc.public_subnet_ids
+}
+
+module "rds" {
+  source = "./modules/RDS"
+  vpc_id = module.vpc.vpc_id
+  rds_security_group_id = module.networking.rds-sg_id
+  database_subnet_ids = module.vpc.database_subnet_ids
+}
+
+module "s3" {
+  source = "./modules/S3"
+}
+
+module "cloudwatch" {
+  source = "./modules/cloudwatch"
+  asg_name = module.asg.asg_name
+  email_endpoints = [var.notification_email]
 }
