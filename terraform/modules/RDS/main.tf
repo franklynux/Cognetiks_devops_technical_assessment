@@ -1,24 +1,3 @@
-# Create subnet group for database
-resource "aws_db_subnet_group" "rds_subnet_grp" {
-    name       = "django-app-db-subnet-grp-${random_string.suffix.result}"
-    subnet_ids = var.database_subnet_ids
-
-    tags = {
-      Name = "Django-App-Database-Subnet-Group"
-    }
-    
-    lifecycle {
-      create_before_destroy = true
-    }
-}
-
-# Generate random suffix to avoid naming conflicts
-resource "random_string" "suffix" {
-  length  = 6
-  special = false
-  upper   = false
-}
-
 # Create a PostgreSQL RDS instance
 resource "aws_db_instance" "postgres_db_django" {
   allocated_storage      = var.allocated_storage
@@ -44,6 +23,30 @@ resource "aws_db_instance" "postgres_db_django" {
     replace_triggered_by = [aws_db_subnet_group.rds_subnet_grp]
   }
 }
+
+
+# Create subnet group for database
+resource "aws_db_subnet_group" "rds_subnet_grp" {
+    name       = "django-app-db-subnet-grp-${random_string.suffix.result}"
+    subnet_ids = var.database_subnet_ids
+
+    tags = {
+      Name = "Django-App-Database-Subnet-Group"
+    }
+    
+    lifecycle {
+      create_before_destroy = true
+    }
+}
+
+# Generate random suffix to avoid naming conflicts
+resource "random_string" "suffix" {
+  length  = 6
+  special = false
+  upper   = false
+}
+
+
 
 # Store the RDS endpoint in Parameter Store
 resource "aws_ssm_parameter" "rds_endpoint" {

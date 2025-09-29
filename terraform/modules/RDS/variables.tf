@@ -1,7 +1,7 @@
 variable "db_name" {
     description = "The name of the database to create"
     type = string
-    default = "mydatabase"
+    default = "postgresDB"
 
 }
 

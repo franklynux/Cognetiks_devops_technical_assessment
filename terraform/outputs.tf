@@ -27,3 +27,8 @@ output "bastion_asg_name" {
   description = "Bastion host Auto Scaling Group name"
   value       = module.asg.bastion_asg_name
 }
+
+output "rds_endpoint" {
+  description = "RDS endpoint URL"
+  value = module.rds.rds_endpoint
+}

@@ -99,6 +99,16 @@ resource "aws_security_group_rule" "allow_https_from_alb" {
     security_group_id = aws_security_group.ec2-sg.id
 }
 
+# Allow ssh access on port 22 from bastion host security group
+resource "aws_security_group_rule" "allow_ssh_from_bastion" {  
+    type = "ingress"
+    from_port = 22
+    to_port = 22
+    protocol = "tcp"
+    source_security_group_id = aws_security_group.bastion-sg.id
+    security_group_id = aws_security_group.ec2-sg.id
+}
+
 # Allow all outbound traffic
 resource "aws_security_group_rule" "allow_all_outbound_ec2" {
     type = "egress"
