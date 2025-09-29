@@ -7,9 +7,7 @@ This project demonstrates production-ready Infrastructure as Code (IaC) for depl
 ## Architecture
 
 ### AWS Architecture Diagram
-![AWS Architecture Diagram](./docs/aws-architecture-diagram.png)
-
-*Note: Please add the architecture diagram screenshot to `./docs/aws-architecture-diagram.png`*
+![AWS Architecture Diagram](./screenshots/AWS_Architecture_diagram.png)
 
 ### Design Decisions
 
@@ -46,6 +44,7 @@ cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars with your key pair name and email
 
 terraform init
+terraform validate
 terraform plan
 terraform apply
 ```
