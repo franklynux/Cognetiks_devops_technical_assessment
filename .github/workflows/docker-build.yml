@@ -27,7 +27,10 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ secrets.DOCKERHUB_USERNAME }}/cognetiks_django_app:v2
+        images: ${{ secrets.DOCKERHUB_USERNAME }}/cognetiks_django_app
+        tags: |
+          type=raw,value=v2
+          type=raw,value=latest
           
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
