@@ -315,42 +315,74 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
+            set -euo pipefail
+            
+            # Variables
+            APP_DIR="/opt/django_app"
+            REPO_URL="https://github.com/franklynux/Cognetiks_devops_technical_assessment.git"
+            PROJECT_NAME="mysite"
+            DJANGO_USER="django"
+            
+            # Install dependencies
             apt-get update -y
-            apt-get install -y python3 python3-venv python3-pip nginx git awscli
+            apt-get install -y python3 python3-venv python3-pip nginx git curl awscli
             
             # Create django user
-            useradd -m -s /bin/bash django
+            if ! id -u $DJANGO_USER >/dev/null 2>&1; then
+              useradd -m -s /bin/bash $DJANGO_USER
+            fi
             
-            # Clone and setup Django app
-            APP_DIR="/opt/django_app"
-            git clone https://github.com/franklynux/Cognetiks_devops_technical_assessment.git $APP_DIR
-            chown -R django:django $APP_DIR
+            # Clone Django app
+            rm -rf "$APP_DIR"
+            mkdir -p "$APP_DIR"
+            chown $DJANGO_USER:$DJANGO_USER "$APP_DIR"
+            sudo -u $DJANGO_USER git clone "$REPO_URL" "$APP_DIR"
             
             # Setup Python environment
-            sudo -u django python3 -m venv $APP_DIR/venv
-            sudo -u django bash -c "source $APP_DIR/venv/bin/activate && pip install -r $APP_DIR/requirements.txt"
+            sudo -u $DJANGO_USER python3 -m venv "$APP_DIR/venv"
+            sudo -u $DJANGO_USER bash -c "source $APP_DIR/venv/bin/activate && pip install --upgrade pip && pip install -r $APP_DIR/requirements.txt"
             
             # Get RDS endpoint from SSM
             RDS_ENDPOINT=$(aws ssm get-parameter --name "/DjangoApp/rds_endpoint" --query "Parameter.Value" --output text --region ${AWS::Region})
             POSTGRES_HOST=$(echo $RDS_ENDPOINT | cut -d':' -f1)
+            POSTGRES_PORT=$(echo $RDS_ENDPOINT | cut -d':' -f2)
             
             # Create .env file
-            cat > $APP_DIR/.env <<EOF
+            cat > "$APP_DIR/.env" <<EOF
             RDS_DB_NAME=postgresDB
-            RDS_USERNAME=postgresadmin
+            RDS_USERNAME=postgres
             RDS_PASSWORD=Admin123!
             RDS_HOSTNAME=$POSTGRES_HOST
-            RDS_PORT=5432
+            RDS_PORT=$POSTGRES_PORT
             EOF
-            chown django:django $APP_DIR/.env
+            chown $DJANGO_USER:$DJANGO_USER "$APP_DIR/.env"
             
-            # Configure Django
-            echo "DEBUG = False" >> $APP_DIR/mysite/settings.py
-            echo "ALLOWED_HOSTS = ['*']" >> $APP_DIR/mysite/settings.py
-            echo "STATIC_ROOT = '$APP_DIR/static'" >> $APP_DIR/mysite/settings.py
+            # Django setup
+            cat >> "$APP_DIR/$PROJECT_NAME/settings.py" <<EOF
+            
+            # Production overrides
+            DEBUG = False
+            ALLOWED_HOSTS = ['*']
+            STATIC_ROOT = '$APP_DIR/static'
+            
+            # Disable CSRF for health checks
+            CSRF_TRUSTED_ORIGINS = ['http://*', 'https://*']
+            USE_X_FORWARDED_HOST = True
+            SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+            EOF
             
             # Run Django setup
-            sudo -u django bash -c "source $APP_DIR/venv/bin/activate && cd $APP_DIR && python manage.py migrate && python manage.py collectstatic --noinput"
+            sudo -u $DJANGO_USER bash -c "source $APP_DIR/venv/bin/activate && cd $APP_DIR && python manage.py migrate && python manage.py collectstatic --noinput"
+            
+            # Set proper permissions
+            sudo chown -R $DJANGO_USER:www-data "$APP_DIR"
+            sudo find "$APP_DIR" -type d -exec chmod 750 {} \;
+            sudo find "$APP_DIR" -type f -exec chmod 640 {} \;
+            if [ -d "$APP_DIR/static" ]; then
+                sudo chmod -R 755 "$APP_DIR/static"
+            fi
+            # Fix executable permissions for venv/bin
+            sudo find "$APP_DIR/venv/bin" -type f -exec chmod 755 {} \;
             
             # Setup Gunicorn service
             cat > /etc/systemd/system/gunicorn.service <<EOF
@@ -359,12 +391,13 @@ Resources:
             After=network.target
             
             [Service]
-            User=django
+            User=$DJANGO_USER
             Group=www-data
             WorkingDirectory=$APP_DIR
             EnvironmentFile=$APP_DIR/.env
-            ExecStart=$APP_DIR/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:8000 mysite.wsgi:application
+            ExecStart=$APP_DIR/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:8000 $PROJECT_NAME.wsgi:application
             Restart=always
+            RestartSec=3
             
             [Install]
             WantedBy=multi-user.target
@@ -380,20 +413,40 @@ Resources:
                     alias $APP_DIR/static/;
                 }
                 
+                # Health check endpoint for ALB
+                location = /health/ {
+                    access_log off;
+                    add_header Content-Type text/plain;
+                    return 200 'OK';
+                }
+                
                 location / {
-                    proxy_pass http://127.0.0.1:8000;
                     proxy_set_header Host \$host;
                     proxy_set_header X-Real-IP \$remote_addr;
+                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto \$scheme;
+                    proxy_pass http://127.0.0.1:8000;
                 }
             }
             EOF
             
-            rm -f /etc/nginx/sites-enabled/default
-            ln -s /etc/nginx/sites-available/django_app /etc/nginx/sites-enabled/
+            # Remove default nginx site
+            sudo rm -f /etc/nginx/sites-enabled/default
+            sudo rm -f /etc/nginx/sites-available/default
+            sudo rm -f /var/www/html/index.nginx-debian.html /var/www/html/index.html || true
+            
+            # Enable Django app
+            sudo ln -sf /etc/nginx/sites-available/django_app /etc/nginx/sites-enabled/django_app
+            
+            # Test nginx config
+            sudo nginx -t
             
             # Start services
             systemctl daemon-reload
-            systemctl enable --now gunicorn nginx
+            systemctl enable --now gunicorn
+            systemctl enable --now nginx
+            systemctl reload nginx
+            
         TagSpecifications:
           - ResourceType: instance
             Tags:
@@ -423,7 +476,7 @@ Resources:
       Port: 80
       Protocol: HTTP
       VpcId: !Ref VPC
-      HealthCheckPath: /
+      HealthCheckPath: /health/
       HealthCheckProtocol: HTTP
       HealthCheckIntervalSeconds: 30
       HealthCheckTimeoutSeconds: 5
@@ -503,7 +556,7 @@ Resources:
       AllocatedStorage: 100
       StorageType: gp2
       DBName: postgresDB
-      MasterUsername: postgresadmin
+      MasterUsername: postgres
       MasterUserPassword: Admin123!
       VPCSecurityGroups:
         - !Ref RDSSecurityGroup
