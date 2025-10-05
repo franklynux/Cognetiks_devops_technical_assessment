@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM Role for Django Infrastructure Deployment'
+
+Resources:
+  DjangoDeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DjangoInfrastructureDeploymentRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DjangoInfrastructurePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:*
+                  - elasticloadbalancing:*
+                  - autoscaling:*
+                  - rds:*
+                  - s3:*
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PassRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:ListRoleTags
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:ListInstanceProfiles
+                  - iam:AddRoleToInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:ListAttachedRolePolicies
+                  - ssm:*
+                  - sns:*
+                  - cloudwatch:*
+                  - logs:*
+                  - cloudformation:*
+                Resource: '*'
+
+Outputs:
+  DeploymentRoleArn:
+    Description: ARN of the deployment role
+    Value: !GetAtt DjangoDeploymentRole.Arn
+    Export:
+      Name: DjangoDeploymentRoleArn

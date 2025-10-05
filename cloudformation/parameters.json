@@ -3,10 +3,7 @@
     "ParameterKey": "Environment",
     "ParameterValue": "production"
   },
-  {
-    "ParameterKey": "KeyName",
-    "ParameterValue": "demo-key"
-  },
+
   {
     "ParameterKey": "NotificationEmail",
     "ParameterValue": "chiwando3@outlook.com"

@@ -8,8 +8,9 @@ Parameters:
     Description: Environment name
     
   KeyName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Description: EC2 Key Pair for SSH access
+    Type: String
+    Description: EC2 Key Pair for SSH access (optional)
+    Default: ""
     
   NotificationEmail:
     Type: String
@@ -25,10 +26,14 @@ Parameters:
     Default: db.t3.micro
     Description: RDS instance class
 
+Conditions:
+  HasKeyName: !Not [!Equals [!Ref KeyName, ""]]
+
 Resources:
   # VPC and Networking
   VPC:
     Type: AWS::EC2::VPC
+    DeletionPolicy: Retain
     Properties:
       CidrBlock: 10.0.0.0/16
       EnableDnsHostnames: true
@@ -288,7 +293,7 @@ Resources:
               Service: ec2.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Tags:
         - Key: Name
           Value: !Sub '${Environment}-ec2-role'
@@ -305,9 +310,9 @@ Resources:
     Properties:
       LaunchTemplateName: !Sub '${Environment}-django-launch-template'
       LaunchTemplateData:
-        ImageId: ami-0c02fb55956c7d316  # Ubuntu 22.04 LTS
+        ImageId: ami-052064a798f08f0d3  # Amazon Linux 2
         InstanceType: !Ref InstanceType
-        KeyName: !Ref KeyName
+        KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
         SecurityGroupIds:
           - !Ref DjangoAppSecurityGroup
         IamInstanceProfile:
@@ -324,8 +329,9 @@ Resources:
             DJANGO_USER="django"
             
             # Install dependencies
-            apt-get update -y
-            apt-get install -y python3 python3-venv python3-pip nginx git curl awscli
+            yum update -y
+            yum install -y python3 python3-pip nginx git curl awscli
+            python3 -m pip install --upgrade pip virtualenv
             
             # Create django user
             if ! id -u $DJANGO_USER >/dev/null 2>&1; then
@@ -417,7 +423,7 @@ Resources:
                 location = /health/ {
                     access_log off;
                     add_header Content-Type text/plain;
-                    return 200 'OK';
+                    return 200 "OK";
                 }
                 
                 location / {
@@ -430,28 +436,45 @@ Resources:
             }
             EOF
             
-            # Remove default nginx site
-            sudo rm -f /etc/nginx/sites-enabled/default
-            sudo rm -f /etc/nginx/sites-available/default
-            sudo rm -f /var/www/html/index.nginx-debian.html /var/www/html/index.html || true
-            
-            # Enable Django app
-            sudo ln -sf /etc/nginx/sites-available/django_app /etc/nginx/sites-enabled/django_app
+            # Remove default nginx site and enable Django app
+            rm -f /etc/nginx/sites-enabled/default
+            ln -sf /etc/nginx/sites-available/django_app /etc/nginx/sites-enabled/django_app
             
             # Test nginx config
-            sudo nginx -t
+            nginx -t
             
             # Start services
             systemctl daemon-reload
-            systemctl enable --now gunicorn
-            systemctl enable --now nginx
-            systemctl reload nginx
+            systemctl enable gunicorn
+            systemctl start gunicorn
+            systemctl enable nginx
+            systemctl start nginx
             
+            # Wait and check services
+            sleep 10
+            systemctl status gunicorn --no-pager
+            systemctl status nginx --no-pager
+
         TagSpecifications:
           - ResourceType: instance
             Tags:
               - Key: Name
                 Value: !Sub '${Environment}-django-app'
+
+  # Bastion Host
+  BastionHost:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0c02fb55956c7d316  # Ubuntu 22.04 LTS
+      InstanceType: t2.micro
+      KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref BastionSecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-bastion-host'
 
   # Application Load Balancer
   ApplicationLoadBalancer:
@@ -523,10 +546,7 @@ Resources:
   ScaleUpPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
-      AdjustmentType: ChangeInCapacity
       AutoScalingGroupName: !Ref AutoScalingGroup
-      Cooldown: 300
-      ScalingAdjustment: 1
       PolicyType: TargetTrackingScaling
       TargetTrackingConfiguration:
         PredefinedMetricSpecification:
@@ -548,6 +568,7 @@ Resources:
   # RDS Instance
   RDSInstance:
     Type: AWS::RDS::DBInstance
+    DeletionPolicy: Retain
     Properties:
       DBInstanceIdentifier: !Sub '${Environment}-django-postgres'
       DBInstanceClass: !Ref DBInstanceClass
@@ -581,6 +602,7 @@ Resources:
   # S3 Bucket for static files and logs
   S3Bucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
     Properties:
       BucketName: !Sub '${Environment}-django-static-${AWS::AccountId}'
       PublicAccessBlockConfiguration:
@@ -609,6 +631,60 @@ Resources:
       Dimensions:
         - Name: AutoScalingGroupName
           Value: !Ref AutoScalingGroup
+
+  # VPC Endpoints for SSM (Session Manager)
+  SSMEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssm'
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref SSMEndpointSecurityGroup
+      PrivateDnsEnabled: true
+
+  SSMMessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssmmessages'
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref SSMEndpointSecurityGroup
+      PrivateDnsEnabled: true
+
+  EC2MessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ec2messages'
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref SSMEndpointSecurityGroup
+      PrivateDnsEnabled: true
+
+  SSMEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for SSM VPC endpoints
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ssm-endpoint-sg'
 
   # SNS Topic for notifications
   SNSTopic:
