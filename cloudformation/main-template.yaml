@@ -29,11 +29,12 @@ Parameters:
 Conditions:
   HasKeyName: !Not [!Equals [!Ref KeyName, ""]]
 
+
 Resources:
   # VPC and Networking
   VPC:
     Type: AWS::EC2::VPC
-    DeletionPolicy: Retain
+    DeletionPolicy: Delete
     Properties:
       CidrBlock: 10.0.0.0/16
       EnableDnsHostnames: true
@@ -320,140 +321,108 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
-            set -euo pipefail
-            
-            # Variables
-            APP_DIR="/opt/django_app"
-            REPO_URL="https://github.com/franklynux/Cognetiks_devops_technical_assessment.git"
-            PROJECT_NAME="mysite"
-            DJANGO_USER="django"
-            
-            # Install dependencies
             yum update -y
-            yum install -y python3 python3-pip nginx git curl awscli
-            python3 -m pip install --upgrade pip virtualenv
-            
-            # Create django user
-            if ! id -u $DJANGO_USER >/dev/null 2>&1; then
-              useradd -m -s /bin/bash $DJANGO_USER
-            fi
-            
-            # Clone Django app
-            rm -rf "$APP_DIR"
-            mkdir -p "$APP_DIR"
-            chown $DJANGO_USER:$DJANGO_USER "$APP_DIR"
-            sudo -u $DJANGO_USER git clone "$REPO_URL" "$APP_DIR"
-            
-            # Setup Python environment
-            sudo -u $DJANGO_USER python3 -m venv "$APP_DIR/venv"
-            sudo -u $DJANGO_USER bash -c "source $APP_DIR/venv/bin/activate && pip install --upgrade pip && pip install -r $APP_DIR/requirements.txt"
-            
-            # Get RDS endpoint from SSM
-            RDS_ENDPOINT=$(aws ssm get-parameter --name "/DjangoApp/rds_endpoint" --query "Parameter.Value" --output text --region ${AWS::Region})
-            POSTGRES_HOST=$(echo $RDS_ENDPOINT | cut -d':' -f1)
-            POSTGRES_PORT=$(echo $RDS_ENDPOINT | cut -d':' -f2)
-            
-            # Create .env file
-            cat > "$APP_DIR/.env" <<EOF
-            RDS_DB_NAME=postgresDB
-            RDS_USERNAME=postgres
-            RDS_PASSWORD=Admin123!
-            RDS_HOSTNAME=$POSTGRES_HOST
-            RDS_PORT=$POSTGRES_PORT
-            EOF
-            chown $DJANGO_USER:$DJANGO_USER "$APP_DIR/.env"
-            
-            # Django setup
-            cat >> "$APP_DIR/$PROJECT_NAME/settings.py" <<EOF
-            
-            # Production overrides
-            DEBUG = False
-            ALLOWED_HOSTS = ['*']
-            STATIC_ROOT = '$APP_DIR/static'
-            
-            # Disable CSRF for health checks
-            CSRF_TRUSTED_ORIGINS = ['http://*', 'https://*']
-            USE_X_FORWARDED_HOST = True
-            SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-            EOF
-            
-            # Run Django setup
-            sudo -u $DJANGO_USER bash -c "source $APP_DIR/venv/bin/activate && cd $APP_DIR && python manage.py migrate && python manage.py collectstatic --noinput"
-            
-            # Set proper permissions
-            sudo chown -R $DJANGO_USER:www-data "$APP_DIR"
-            sudo find "$APP_DIR" -type d -exec chmod 750 {} \;
-            sudo find "$APP_DIR" -type f -exec chmod 640 {} \;
-            if [ -d "$APP_DIR/static" ]; then
-                sudo chmod -R 755 "$APP_DIR/static"
-            fi
-            # Fix executable permissions for venv/bin
-            sudo find "$APP_DIR/venv/bin" -type f -exec chmod 755 {} \;
-            
-            # Setup Gunicorn service
-            cat > /etc/systemd/system/gunicorn.service <<EOF
-            [Unit]
-            Description=Gunicorn Django Service
-            After=network.target
-            
-            [Service]
-            User=$DJANGO_USER
-            Group=www-data
-            WorkingDirectory=$APP_DIR
-            EnvironmentFile=$APP_DIR/.env
-            ExecStart=$APP_DIR/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:8000 $PROJECT_NAME.wsgi:application
-            Restart=always
-            RestartSec=3
-            
-            [Install]
-            WantedBy=multi-user.target
-            EOF
-            
-            # Configure Nginx
-            cat > /etc/nginx/sites-available/django_app <<EOF
-            server {
-                listen 80 default_server;
-                server_name _;
-                
-                location /static/ {
-                    alias $APP_DIR/static/;
+            yum install -y aws-cfn-bootstrap
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource DjangoLaunchTemplate --region ${AWS::Region}
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            yum:
+              python3: []
+              python3-pip: []
+              nginx: []
+              git: []
+          users:
+            django:
+              homeDir: /home/django
+          sources:
+            /opt/django_app: https://github.com/franklynux/Cognetiks_devops_technical_assessment/archive/refs/heads/main.tar.gz
+          files:
+            /opt/django_app/.env:
+              content: !Sub |
+                RDS_DB_NAME=postgresDB
+                RDS_USERNAME=postgres
+                RDS_PASSWORD=Admin123!
+                RDS_HOSTNAME=${RDSInstance.Endpoint.Address}
+                RDS_PORT=5432
+              owner: django
+              group: django
+            /etc/nginx/conf.d/django_app.conf:
+              content: |
+                server {
+                    listen 80 default_server;
+                    server_name _;
+                    location /health/ {
+                        access_log off;
+                        return 200 'OK';
+                        add_header Content-Type text/plain;
+                    }
+                    location / {
+                        proxy_pass http://127.0.0.1:8000;
+                        proxy_set_header Host $host;
+                        proxy_set_header X-Real-IP $remote_addr;
+                    }
                 }
-                
-                # Health check endpoint for ALB
-                location = /health/ {
-                    access_log off;
-                    add_header Content-Type text/plain;
-                    return 200 "OK";
-                }
-                
-                location / {
-                    proxy_set_header Host \$host;
-                    proxy_set_header X-Real-IP \$remote_addr;
-                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto \$scheme;
-                    proxy_pass http://127.0.0.1:8000;
-                }
-            }
-            EOF
-            
-            # Remove default nginx site and enable Django app
-            rm -f /etc/nginx/sites-enabled/default
-            ln -sf /etc/nginx/sites-available/django_app /etc/nginx/sites-enabled/django_app
-            
-            # Test nginx config
-            nginx -t
-            
-            # Start services
-            systemctl daemon-reload
-            systemctl enable gunicorn
-            systemctl start gunicorn
-            systemctl enable nginx
-            systemctl start nginx
-            
-            # Wait and check services
-            sleep 10
-            systemctl status gunicorn --no-pager
-            systemctl status nginx --no-pager
+            /opt/django_app/requirements.txt:
+              content: |
+                Django>=4.0
+                gunicorn>=20.0
+                psycopg2-binary
+              owner: django
+              group: django
+            /etc/systemd/system/gunicorn.service:
+              content: |
+                [Unit]
+                Description=Gunicorn Django Service
+                After=network.target
+                [Service]
+                User=django
+                WorkingDirectory=/opt/django_app
+                EnvironmentFile=/opt/django_app/.env
+                ExecStart=/opt/django_app/venv/bin/gunicorn --bind 0.0.0.0:8000 mysite.wsgi:application
+                Restart=always
+                [Install]
+                WantedBy=multi-user.target
+          commands:
+            01_fix_extraction:
+              command: |
+                if [ -d "/opt/django_app/Cognetiks_devops_technical_assessment-main" ]; then
+                  mv /opt/django_app/Cognetiks_devops_technical_assessment-main/* /opt/django_app/
+                  rmdir /opt/django_app/Cognetiks_devops_technical_assessment-main
+                fi
+                chown -R django:django /opt/django_app
+            02_cleanup_nginx:
+              command: |
+                rm -f /etc/nginx/nginx.conf.default
+                rm -f /etc/nginx/conf.d/default.conf
+                rm -f /etc/nginx/sites-enabled/default
+            03_setup_venv:
+              command: |
+                cd /opt/django_app
+                python3 -m venv venv
+                source venv/bin/activate
+                pip install -r requirements.txt
+              cwd: /opt/django_app
+            04_django_setup:
+              command: |
+                source venv/bin/activate
+                python manage.py migrate
+                python manage.py collectstatic --noinput
+              cwd: /opt/django_app
+              env:
+                DJANGO_SETTINGS_MODULE: mysite.settings
+            05_reload_systemd:
+              command: systemctl daemon-reload
+          services:
+            systemd:
+              nginx:
+                enabled: true
+                ensureRunning: true
+              gunicorn:
+                enabled: true
+                ensureRunning: true
 
         TagSpecifications:
           - ResourceType: instance
@@ -568,7 +537,7 @@ Resources:
   # RDS Instance
   RDSInstance:
     Type: AWS::RDS::DBInstance
-    DeletionPolicy: Retain
+    DeletionPolicy: Delete
     Properties:
       DBInstanceIdentifier: !Sub '${Environment}-django-postgres'
       DBInstanceClass: !Ref DBInstanceClass
@@ -602,7 +571,7 @@ Resources:
   # S3 Bucket for static files and logs
   S3Bucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    DeletionPolicy: Delete
     Properties:
       BucketName: !Sub '${Environment}-django-static-${AWS::AccountId}'
       PublicAccessBlockConfiguration:
