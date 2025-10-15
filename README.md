@@ -485,38 +485,85 @@ docker push <your-dockerhub-username>/django-app:latest
 
 ### Kubernetes Deployment
 ```bash
-# Deploy application using manifests
-kubectl apply -f kubernetes/manifests/
-
-# Or using Helm (recommended)
-helm install django-app kubernetes/helm/django-app/
+# Deploy application using Helm (recommended)
+helm install django-app helm/django-app/ \
+  --set image.repository=<your-dockerhub-username>/django-app \
+  --set image.tag=latest \
+  --create-namespace \
+  --namespace django-app
 
 # Verify deployment
 kubectl get pods,svc,hpa -n django-app
+
+# View Helm release
+helm list -n django-app
 ```
 
 ### Kubernetes Resources Structure
 ```
-kubernetes/
-├── manifests/
-│   ├── namespace.yaml          # Django app namespace
-│   ├── configmap.yaml          # Application configuration
-│   ├── secret.yaml             # Database credentials
-│   ├── deployment.yaml         # Django app deployment
-│   ├── service.yaml            # ClusterIP service
-│   ├── ingress.yaml            # ALB ingress controller
-│   └── hpa.yaml                # Horizontal Pod Autoscaler
-├── helm/
-│   └── django-app/             # Helm chart
-└── monitoring/
-    ├── prometheus/             # Prometheus configuration
-    └── grafana/                # Grafana dashboards
+helm/
+└── django-app/                 # Helm chart for Django application
+    ├── Chart.yaml              # Chart metadata and version
+    ├── values.yaml             # Default configuration values
+    ├── .helmignore             # Files to ignore when packaging
+    ├── charts/                 # Chart dependencies (if any)
+    └── templates/              # Kubernetes manifest templates
+        ├── deployment.yaml     # Django app deployment
+        ├── service.yaml        # ClusterIP/LoadBalancer service
+        ├── ingress.yaml        # ALB ingress controller
+        ├── hpa.yaml            # Horizontal Pod Autoscaler
+        ├── serviceaccount.yaml # Service account for pods
+        ├── _helpers.tpl        # Template helpers and functions
+        ├── NOTES.txt           # Post-installation notes
+        └── tests/              # Helm chart tests
+
+k8s/                            # Monitoring stack manifests
+├── prometheus-config.yaml      # Prometheus configuration
+├── prometheus-deployment.yaml  # Prometheus deployment
+├── grafana-datasource-config.yaml  # Grafana data source
+└── grafana-deployment.yaml     # Grafana deployment
+```
+
+### Helm Chart Configuration
+Edit `helm/django-app/values.yaml` to customize:
+```yaml
+image:
+  repository: <your-dockerhub-username>/django-app
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
 ```
 
 ### Monitoring Setup
 ```bash
-# Deploy Prometheus and Grafana using manifests
-kubectl apply -f kubernetes/monitoring/
+# Deploy Prometheus
+kubectl apply -f k8s/prometheus-config.yaml
+kubectl apply -f k8s/prometheus-deployment.yaml
+
+# Deploy Grafana
+kubectl apply -f k8s/grafana-datasource-config.yaml
+kubectl apply -f k8s/grafana-deployment.yaml
 
 # Verify monitoring stack deployment
 kubectl get pods -n monitoring
@@ -543,25 +590,48 @@ kubectl port-forward -n monitoring svc/grafana 3000:3000
 
 *Metrics: Connection count, query performance, database size, replication lag*
 
+### Helm Chart Management
+```bash
+# Upgrade release with new values
+helm upgrade django-app helm/django-app/ \
+  --set image.tag=v2.0 \
+  --namespace django-app
+
+# Rollback to previous version
+helm rollback django-app 1 --namespace django-app
+
+# Uninstall release
+helm uninstall django-app --namespace django-app
+
+# Package chart for distribution
+helm package helm/django-app/
+```
+
 ### Scaling and High Availability
 ```bash
 # Check HPA status
-kubectl get hpa django-app -n django-app
+kubectl get hpa -n django-app
 
 # Manual scaling (if needed)
 kubectl scale deployment django-app --replicas=5 -n django-app
 
 # View scaling events
 kubectl describe hpa django-app -n django-app
+
+# Check pod distribution across nodes
+kubectl get pods -n django-app -o wide
 ```
 
 ### Application Access
 ```bash
-# Get ALB endpoint
-kubectl get ingress django-app-ingress -n django-app
+# Get service endpoint
+kubectl get svc -n django-app
+
+# Get ingress endpoint (if configured)
+kubectl get ingress -n django-app
 
 # Test application
-curl -I http://<alb-endpoint>/
+curl -I http://<service-endpoint>/health
 ```
 
 ### Troubleshooting EKS
